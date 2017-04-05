@@ -1,0 +1,104 @@
+---
+title: "Clust"
+author: "Polina Lipaeva"
+date: "April 2, 2017"
+output: html_document
+---
+
+```{r setup, warning=FALSE, message=FALSE}
+getwd()
+library(DESeq2)
+library(ggplot2)
+library(pheatmap)
+library(amap)
+library(dbscan)
+options(width=120)
+```
+
+```{r dataset}
+counts <- read.csv("GSE89225_Illumina_counts.csv", row.names=1)
+conditions <- read.csv("conditions.csv", row.names=1)
+```
+
+```{r dds building, cache=T}
+dds <- DESeqDataSetFromMatrix(countData = counts,
+                              colData = conditions,
+                              design = ~ tissue + cells)
+dds <- dds[order(rowSums(counts(dds)), decreasing = T),]
+dds <- head(dds, n=8000)
+dds_log <- rlog(dds)
+haha <- assay(dds_log) # вытаскиваем дата фрейм со значениями экспрессии из объекта dds_log
+```
+
+# Иерархическая кластеризация
+```{r correlation}
+cor_matr <- cor(haha) # матрица корреляций
+cor_matr_unlike <- 1 - cor_matr # матрица "непохожести"
+dist_unlike <- dist(cor_matr_unlike)
+```
+
+```{r clust_plot}
+hc_compl <- hclust(dist_unlike) # default -> method="complete"
+hc_compl_plot <- plot(hc_compl)
+hc_aver <- hclust(dist_unlike, method = "average")
+hc_aver_plot <- plot(hc_aver)
+hc_single <- hclust(dist_unlike, method = "single")
+hc_single_plot <- plot(hc_single)
+
+```
+
+# K-means
+```{r dataset wo outlier}
+counts$treg_NBP_patient3 <- NULL  
+conditions <- read.csv("conditions.csv", row.names=1)
+conditions <- conditions[!rownames(conditions) == "treg_NBP_patient3",]
+
+```
+
+```{r dds building for k-means, cache=T}
+dds_2 <- DESeqDataSetFromMatrix(countData = counts,
+                              colData = conditions,
+                              design = ~ tissue + cells)
+dds_2 <- dds_2[order(rowSums(counts(dds_2)), decreasing = T),]
+dds_2 <- head(dds_2, n=8000)
+dds_log_2 <- rlog(dds_2)
+haha_2 <- assay(dds_log_2)
+```
+
+```{r kmeans, fig.height=20}
+
+haha_2_kmeans <- Kmeans(haha_2, centers = 6, iter.max = 20000, method = "correlation")
+tocluster <- haha_2_kmeans$cluster
+#as.vector(tocluster)
+counts.norm <- assay(dds_log_2, normalized=TRUE)
+#png("heatmap_large.png", width=6, height=20, units="in", res=300)
+
+to_visualise <- counts.norm[, order(conditions[, 2], conditions[, 1])]
+#to_visualise <- to_visualise[, order()]
+to_visualise <- to_visualise[order(tocluster),]
+to_visualise <- t(apply(to_visualise, 1, function(r) {
+  (r - min(r)) / (max(r) - min(r))
+}))
+
+cl <- data.frame(cluster=as.vector(tocluster), row.names=names(tocluster))
+
+pheatmap(to_visualise, 
+         show_rownames = F, cluster_rows = F,
+         cluster_cols = F,
+         annotation_col = conditions,
+         annotation_row = cl)
+#dev.off()
+```
+
+# Density based algortihms
+```{r projection data, warning=FALSE}
+tsne <- read.csv("homework2/projection.csv")
+tsne_matr <- cbind(tsne$TSNE.1, tsne$TSNE.2)
+(res_dbscan <- dbscan(tsne_matr, eps = 3, minPts = 2))
+
+plot(tsne_matr, xlab='TSNE.1', ylab='TSNE.2')
+
+hullplot(tsne_matr, res_dbscan, hull_lwd=0, alpha=0, col=c('pink', 'coral', 'darkolivegreen2', 'lightsteelblue', 'seagreen1',  'slateblue1', 'salmon1'), xlab='TSNE.1', ylab='TSNE.2', main = "")
+
+```
+
