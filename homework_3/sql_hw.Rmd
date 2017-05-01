@@ -1,0 +1,133 @@
+---
+title: "Sqtl_hw"
+author: "Polina Lipaeva"
+date: "April 26, 2017"
+output: html_document
+---
+
+```{r libs, warning=F, message=F}
+library(RSQLite)
+library(DBI)
+```
+
+```{r setup, warning=FALSE, message=F, cache=TRUE}
+mydb <- dbConnect(RSQLite::SQLite(), "data.sqlite") # сначала создаём коннекшен
+str(mydb)
+dbListTables(mydb)
+```
+
+## Перечислить пользователей в алфавитном порядке username (все колонки в любом порядке)
+
+```{r}
+dbGetQuery(mydb, "SELECT * FROM Users order by username;")
+#arrange(df1, username)
+```
+
+## 5 пользователей, которые зарегистрировались последними (все колонки в любом порядке)
+```{r}
+dbGetQuery(mydb, "SELECT * FROM Users order by -registered limit 5;")
+#head(arrange(df1, desc(registered)), n = 5)
+```
+
+## Топ 5 пользователей по числу прослушиваний (все колонки в любом порядке)
+
+```{r}
+dbGetQuery(mydb, "SELECT *, count(*) FROM Listened join Users where Listened.user_id = Users.id
+                  group by username
+                  order by count(*) desc
+                  limit 5;")
+#df2 <- dbGetQuery(mydb, "SELECT * FROM Listened join Users where Listened.user_id = Users.id;")
+#df3 <- group_by(df2, username)
+#head(arrange(summarise(df3, n = n()), desc(n)), n = 5)
+```
+
+## Информация об исполнителях и количестве их альбомов (имя исполнителя|число)
+```{r}
+dbGetQuery(mydb, "SELECT Artists.name, count(*) FROM Albums join Artists where Albums.artist_id = Artists.id
+                  group by artist_id
+                  limit 10")
+```
+
+## Информацию об исполнителях и количестве их песен (имя исполнителя|число)
+
+```{r}
+
+dbGetQuery(mydb, "SELECT Artists.name, count(*) FROM Songs join Albums join Artists
+           where Albums.artist_id = Artists.id
+           group by Albums.artist_id
+           order by Artists.name
+           limit 10")
+```
+
+## Самый длинный альбом по числу песен (имя исполнителя|название альбома|число)
+```{r}
+
+dbGetQuery(mydb, "SELECT Artists.name, Albums.name, count(*) FROM Songs join Albums join Artists
+                  where Albums.artist_id = Artists.id AND Songs.album_id = Albums.id
+                  group by Songs.album_id
+                  order by count(*) desc
+                  limit 1")
+```
+
+## Самый длинный альбом по суммарной продолжительности (имя исполнителя|название альбома|число)
+
+```{r}
+dbGetQuery(mydb, "SELECT Artists.name, Albums.name, total(duration) FROM Songs join Albums join Artists
+                  where Albums.artist_id = Artists.id AND Songs.album_id = Albums.id
+                  group by Songs.album_id
+                  order by total(duration) desc
+                  limit 1")
+```
+
+## Альбом c самой большой средней продолжительностью трека (имя исполнителя|название альбома|число)
+
+```{r}
+dbGetQuery(mydb, "SELECT Artists.name, Albums.name, duration as mean FROM Songs join Albums join Artists
+                  where Albums.artist_id = Artists.id AND Songs.album_id = Albums.id
+                  group by Songs.album_id
+                  order by mean desc
+                  limit 1")
+```
+
+## Топ 5 самых прослушиваемых треков (имя исполнителя|название альбома|название песни|число)
+
+```{r}
+dbGetQuery(mydb, "SELECT Artists.name, Albums.name, Songs.name, count(*) FROM Listened join Albums join Artists join Songs
+                  where Albums.artist_id = Artists.id AND Songs.album_id = Albums.id AND Listened.song_id = Songs.id
+                  group by Listened.song_id
+                  order by count(*) desc
+                  limit 5")
+```
+
+## Найдите год, что песни, выпущенные в этом году, слушают больше всего (год|количество прослушиваний)
+
+```{r}
+dbGetQuery(mydb, "SELECT release_year, count(*) FROM Listened join Songs join Albums
+                  where Listened.song_id = Songs.id AND Songs.album_id = Albums.id
+                  group by release_year
+                  order by count(*) desc
+                  limit 1")
+```
+
+## Для пользователя с id=47 найдите топ 20 последних прослушанных треков (имя исполнителя|название альбома|название песни|когда)
+
+```{r}
+dbGetQuery(mydb, "SELECT Artists.name, Albums.name, Songs.name, start_time FROM Listened join Songs join Albums join Artists
+                  where Listened.song_id = Songs.id AND Songs.album_id = Albums.id AND Albums.artist_id = Artists.id 
+                  AND  user_id = 47
+                  order by start_time desc
+                  limit 20")
+```
+
+## (Больше join Богу join) Для каждого пользователя и каждой песни, которую пользователь прослушал, найдите количество прослушиваний (имя пользователя|имя исполнителя|название альбома|название песни|число). Подсказка – можно использовать пару колонок в group by.
+
+```{r}
+dbGetQuery(mydb, "SELECT username, Artists.name, Albums.name, Songs.name, count(*) FROM Listened join Users join Songs 
+                  join Albums join Artists
+                  where Listened.user_id = Users.id AND Listened.song_id = Songs.id AND Songs.album_id = Albums.id 
+                  AND Albums.artist_id = Artists.id
+                  group by user_id, song_id
+                  order by username
+                  limit 10")
+```
+
