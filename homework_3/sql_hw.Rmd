@@ -10,7 +10,7 @@ library(RSQLite)
 library(DBI)
 ```
 
-```{r setup, warning=FALSE, message=F, cache=TRUE}
+```{r setup, warning=FALSE, message=F, cache=FALSE}
 mydb <- dbConnect(RSQLite::SQLite(), "data.sqlite") # сначала создаём коннекшен
 str(mydb)
 dbListTables(mydb)
@@ -25,7 +25,9 @@ dbGetQuery(mydb, "SELECT * FROM Users order by username;")
 
 ## 5 пользователей, которые зарегистрировались последними (все колонки в любом порядке)
 ```{r}
-dbGetQuery(mydb, "SELECT * FROM Users order by -registered limit 5;")
+dbGetQuery(mydb, "SELECT * FROM Users 
+                  order by registered desc 
+                  limit 5;")
 #head(arrange(df1, desc(registered)), n = 5)
 ```
 
@@ -53,7 +55,7 @@ dbGetQuery(mydb, "SELECT Artists.name, count(*) FROM Albums join Artists where A
 ```{r}
 
 dbGetQuery(mydb, "SELECT Artists.name, count(*) FROM Songs join Albums join Artists
-           where Albums.artist_id = Artists.id
+           where Albums.artist_id = Artists.id AND Songs.album_id = Albums.id
            group by Albums.artist_id
            order by Artists.name
            limit 10")
@@ -82,7 +84,7 @@ dbGetQuery(mydb, "SELECT Artists.name, Albums.name, total(duration) FROM Songs j
 ## Альбом c самой большой средней продолжительностью трека (имя исполнителя|название альбома|число)
 
 ```{r}
-dbGetQuery(mydb, "SELECT Artists.name, Albums.name, duration as mean FROM Songs join Albums join Artists
+dbGetQuery(mydb, "SELECT Artists.name, Albums.name, total(duration) * 1.0 / count(duration) as mean FROM Songs join Albums join Artists
                   where Albums.artist_id = Artists.id AND Songs.album_id = Albums.id
                   group by Songs.album_id
                   order by mean desc

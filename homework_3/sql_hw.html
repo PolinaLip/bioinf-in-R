@@ -134,7 +134,7 @@ str(mydb)</code></pre>
 ##   ..@ loadable.extensions: logi TRUE
 ##   ..@ flags              : int 70
 ##   ..@ vfs                : chr &quot;&quot;
-##   ..@ ref                :&lt;environment: 0x2dce608&gt;</code></pre>
+##   ..@ ref                :&lt;environment: 0x427f100&gt;</code></pre>
 <pre class="r"><code>dbListTables(mydb)</code></pre>
 <pre><code>## [1] &quot;Albums&quot;          &quot;Artists&quot;         &quot;Listened&quot;        &quot;Songs&quot;          
 ## [5] &quot;Users&quot;           &quot;sqlite_sequence&quot;</code></pre>
@@ -226,13 +226,15 @@ str(mydb)</code></pre>
 </div>
 <div id="--------" class="section level2">
 <h2>5 пользователей, которые зарегистрировались последними (все колонки в любом порядке)</h2>
-<pre class="r"><code>dbGetQuery(mydb, &quot;SELECT * FROM Users order by -registered limit 5;&quot;)</code></pre>
-<pre><code>##   id         username          registered
-## 1 13    Bob_Gorefiend 2016-01-02 22:09:20
-## 2 72  Kate_Shadowsong 2016-03-22 14:11:53
-## 3 29  Bob_Mekkatorque 2015-03-09 07:38:48
-## 4 79 Daria_Windrunner 2015-11-14 07:20:33
-## 5  6  Mary_Proudmoore 2014-10-24 06:26:32</code></pre>
+<pre class="r"><code>dbGetQuery(mydb, &quot;SELECT * FROM Users 
+                  order by registered desc 
+                  limit 5;&quot;)</code></pre>
+<pre><code>##   id           username          registered
+## 1 72    Kate_Shadowsong 2016-03-22 14:11:53
+## 2 13      Bob_Gorefiend 2016-01-02 22:09:20
+## 3 79   Daria_Windrunner 2015-11-14 07:20:33
+## 4 29    Bob_Mekkatorque 2015-03-09 07:38:48
+## 5 11 Penelope_Sanguinar 2014-12-23 09:20:39</code></pre>
 <pre class="r"><code>#head(arrange(df1, desc(registered)), n = 5)</code></pre>
 </div>
 <div id="-5---------" class="section level2">
@@ -277,21 +279,21 @@ str(mydb)</code></pre>
 <div id="--------" class="section level2">
 <h2>Информацию об исполнителях и количестве их песен (имя исполнителя|число)</h2>
 <pre class="r"><code>dbGetQuery(mydb, &quot;SELECT Artists.name, count(*) FROM Songs join Albums join Artists
-           where Albums.artist_id = Artists.id
+           where Albums.artist_id = Artists.id AND Songs.album_id = Albums.id
            group by Albums.artist_id
            order by Artists.name
            limit 10&quot;)</code></pre>
 <pre><code>##                 name count(*)
-## 1           A Frames   141542
-## 2      Adam Axelsson    24978
-## 3      Aemilie Aggak     8326
-## 4    Akiko Bharoocha    16652
-## 5     Al Simpson (3)     8326
-## 6           Ambusher    66608
-## 7  Andreas Vöhringer    16652
-## 8       Android (10)    58282
-## 9      Anna Gartrell     8326
-## 10          Aqualuna   141542</code></pre>
+## 1           A Frames      281
+## 2      Adam Axelsson       54
+## 3      Aemilie Aggak       90
+## 4    Akiko Bharoocha       19
+## 5     Al Simpson (3)       12
+## 6           Ambusher      114
+## 7  Andreas Vöhringer       13
+## 8       Android (10)       91
+## 9      Anna Gartrell       28
+## 10          Aqualuna      326</code></pre>
 </div>
 <div id="--------" class="section level2">
 <h2>Самый длинный альбом по числу песен (имя исполнителя|название альбома|число)</h2>
@@ -315,13 +317,13 @@ str(mydb)</code></pre>
 </div>
 <div id="-c--------" class="section level2">
 <h2>Альбом c самой большой средней продолжительностью трека (имя исполнителя|название альбома|число)</h2>
-<pre class="r"><code>dbGetQuery(mydb, &quot;SELECT Artists.name, Albums.name, duration as mean FROM Songs join Albums join Artists
+<pre class="r"><code>dbGetQuery(mydb, &quot;SELECT Artists.name, Albums.name, total(duration) * 1.0 / count(duration) as mean FROM Songs join Albums join Artists
                   where Albums.artist_id = Artists.id AND Songs.album_id = Albums.id
                   group by Songs.album_id
                   order by mean desc
                   limit 1&quot;)</code></pre>
 <pre><code>##         name                          name mean
-## 1 Mike Cosma Collage Mania #1: Quaquaverse 2791</code></pre>
+## 1 Mike Cosma Collage Mania #1: Quaquaverse 2331</code></pre>
 </div>
 <div id="-5-------" class="section level2">
 <h2>Топ 5 самых прослушиваемых треков (имя исполнителя|название альбома|название песни|число)</h2>
