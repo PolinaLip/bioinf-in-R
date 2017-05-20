@@ -1,0 +1,221 @@
+---
+title: "hw4_random_forest"
+author: "Polina Lipaeva"
+date: "May 13, 2017"
+output: html_document
+---
+
+```{r setup, message=FALSE, warning=FALSE}
+library(randomForest)
+library(rpart)
+library(rattle)
+library(rpart.plot)
+library(RColorBrewer)
+library(ggplot2)
+```
+
+## Восстановление возраста по данным метелирования
+Данные для этой данной домашней работы мы возьмем из статьи “A novel strategy for forensic age prediction by DNA methylation and support vector regression model”, Cheng Xu et al, Scientific reports 2015. (Статья будет в архиве), где авторы попытались построить предсказатель возраста человека по данным метилирования отдельных CpG sites. Данные будут выглядеть следующим образом:
+
+```{r}
+#setwd('./IB/R_bionf/hw4/random_forest_hw/')
+ages <- read.table("ages.tsv", sep="\t", header=1)
+head(ages)
+methylation <- read.table("methylation.tsv", sep="\t", header=1, row.names = 1, na.strings = "NA")
+print(methylation[1:5, 1:5])
+```
+
+```{r data preparation}
+# транспонировать табличку, каждому возрасту должно соответсвовать уровень метилирования
+transp_dt <- data.frame(t(methylation[,4:ncol(methylation)]))
+transp_age <- cbind(transp_dt, Age=ages$Age)
+transp_age[is.na(transp_age)] <- 0
+```
+
+## Предподготовка данных
+```{r cor}
+cor_data <- sapply(transp_age[-96], function(x) abs(cor(x, transp_age$Age)))
+cor_data
+top10 <- head(sort(cor_data, decreasing = T), 10)
+top10_dt <- cbind(Age=ages$Age, transp_age[names(top10)])
+top10_dt
+```
+
+## Предподготовка данных (machine learning)
+
+```{r message=FALSE, warning=FALSE}
+set.seed(77)
+training <- sample(1:50, 40)
+validation <- (1:50)[-training]
+
+train <- top10_dt[training, ]
+valid <- top10_dt[validation, ]
+
+```
+
+## Функция-обертка
+
+```{r}
+wrapper <- function(train.data, train.response,
+                    test.data, test.response, 
+                    runs.number=50, ...) {
+  
+  forest <- lapply(1:runs.number, function(x) randomForest(train.response ~ ., data=train.data[-1], ...))
+  train_rmse <- lapply(forest, function(x) sqrt((1/(nrow(train.data[-1]))) * sum((predict(x, train.data[-1]) - train.response) ** 2)))
+  valid_rmse <- lapply(forest, function(x) sqrt((1/(nrow(test.data[-1]))) * sum((predict(x, test.data[-1]) - test.response) ** 2)))
+  tr_rmse_vect <- rapply(train_rmse, c)
+  val_rmse_vect <- rapply(valid_rmse, c)
+  tr_mean_rmse <- mean(tr_rmse_vect)
+  val_mean_rmse <- mean(val_rmse_vect)
+  return(c(tr_mean_rmse, val_mean_rmse))
+}
+# запуск randomForest с аргументами по умолчанию 50 раз и подсчет средней ошибки
+errors.defaults <- wrapper(train, train$Age, valid, valid$Age, 50)
+print(errors.defaults)
+# запуск randomForest всего с 1 деревом внутри 50 раз и подсчет средней ошики
+errors.ntree1 <- wrapper(train, train$Age, valid, valid$Age, 50, ntree=1)
+print(errors.ntree1)
+```
+
+Неудивительно, однако случайный лес состоящий из одного дерева предсказывает оба датасета хуже, чем лес, построенный по умолчанию (в нём 500 деревьев).
+
+ntree – количество деревьев в случайном лесе, по умолчанию 500
+replace – когда делается bagging (bootstrapping) нашего случайного леса, должны мы это делать с возвращением, или нет? По умолчанию, мы делает bagging с возвращением.
+sampsize – когда делается bagging (bootstrapping) нашего случайного леса, сколько мы должны взять объектов из тренировочного датасета? По умолчанию, если replace==TRUE мы берем все N объектов, а если FALSE, то 23N23N
+nodesize – минимальный размер (по количеству объектов) для листовых вершин, значение по умолчанию – 5
+mtry – количество признаков, которое случайно выбирается при каждом разбиении (это также называется feature bagging)
+
+```{r}
+# запуск randomForest со всеми вершинами (nodesize=1), replace=F, sampsize=N, mtry=M - переобучение
+errors.overfit <- wrapper(train, train$Age, valid, valid$Age, 50,
+                          nodesize=1, replace=F, sampsize=40, mtry=10, ntree=100)
+print(errors.overfit)
+```
+
+```{r}
+ntrees <- seq(1, 1000, 5)
+errors <- sapply(ntrees, function(x) wrapper(train, train$Age, valid, valid$Age, ntree=x))
+plot(errors[1,])
+
+toPlot <- rbind(
+data.frame(degree=ntrees, SSE=errors[1,], dataset="Train"),
+data.frame(degree=ntrees, SSE=errors[2,], dataset="Validation")
+  )
+ggplot(data=toPlot, aes(x=degree, y=SSE, color=dataset)) +
+    geom_point(size=3) + scale_y_log10() +
+    geom_line(size=2) + ggtitle("SSE Plot") +
+    theme_bw()
+```
+
+REPLACE and SAMPSIZE
+```{r REPLACE and SAMPSIZE}
+
+samplesize <- 1:40
+samplesize_ch <- sapply(samplesize, function(x) wrapper(train, train$Age, valid, valid$Age, 50,
+                          nodesize=1, replace=F, sampsize=x, mtry=10, ntree=250))
+toPlot2 <- rbind(
+data.frame(degree=samplesize, SSE=samplesize_ch[1,], dataset="Train"),
+data.frame(degree=samplesize, SSE=samplesize_ch[2,], dataset="Validation")
+  )
+# график зависимости ошибки от sampsize (1:40) при replace=F
+ggplot(data=toPlot2, aes(x=degree, y=SSE, color=dataset)) +
+    geom_point(size=3) +
+    geom_line(size=2) + ggtitle("SSE Plot") +
+    theme_bw()
+
+samplesize_ch_2 <- sapply(samplesize, function(x) wrapper(train, train$Age, valid, valid$Age, 50,
+                          nodesize=1, replace=T, sampsize=x, mtry=10, ntree=250))
+
+toPlot3 <- rbind(
+data.frame(degree=samplesize, SSE=samplesize_ch_2[1,], dataset="Train"),
+data.frame(degree=samplesize, SSE=samplesize_ch_2[2,], dataset="Validation")
+  )
+
+# график зависимости ошибки от sampsize (1:40) при replace=T
+ggplot(data=toPlot3, aes(x=degree, y=SSE, color=dataset)) +
+    geom_point(size=3) +
+    geom_line(size=2) + ggtitle("SSE Plot") +
+    theme_bw()
+```
+
+Модель, использующая значение replace=F, переобучается быстрее, график для валидирующей выборки пополз вверх. Используем replace=T. Используем sampsize=13, так как исходя из графика меньшая ошибка при этом значении.
+
+```{r Nodesize}
+nodesizes <- 1:40
+nodesize_ch <- sapply(nodesizes, function(x) wrapper(train, train$Age, valid, valid$Age, 50,
+                          nodesize=x, replace=T, sampsize=13, mtry=10, ntree=250))
+
+toPlot4 <- rbind(
+data.frame(degree=nodesizes, SSE=nodesize_ch[1,], dataset="Train"),
+data.frame(degree=nodesizes, SSE=nodesize_ch[2,], dataset="Validation")
+  )
+# график зависимости ошибки от nodesize (1:40)
+ggplot(data=toPlot4, aes(x=degree, y=SSE, color=dataset)) +
+    geom_point(size=3) +
+    geom_line(size=2) + ggtitle("SSE Plot") +
+    theme_bw()
+```
+На графике есть переобучение. Tак как при большом nodesize мы считаем decision tree недообученными, а при малом – переобученными, то можно выбрать значение nodesize равным 4. 
+ 
+ 
+```{r MTRY}
+mtries <- 1:10
+mtries_ch <- sapply(mtries, function(x) wrapper(train, train$Age, valid, valid$Age, 50,
+                          nodesize=4, replace=T, sampsize=13, mtry=x, ntree=250))
+toPlot5 <- rbind(
+data.frame(degree=mtries, SSE=mtries_ch[1,], dataset="Train"),
+data.frame(degree=mtries, SSE=mtries_ch[2,], dataset="Validation")
+  )
+# график зависимости ошибки от mtry (1:10)
+ggplot(data=toPlot5, aes(x=degree, y=SSE, color=dataset)) +
+    geom_point(size=3) +
+    geom_line(size=2) + ggtitle("SSE Plot") +
+    theme_bw()
+```
+
+На графике есть переобучение, выбираем mtry=2. 
+
+```{r}
+# our data, matrix 50 donors by 10 methylation sites
+dim(top10_dt)
+# age of all donors
+head(top10_dt$Age)
+
+set.seed(1)
+
+# splitting our dataset into 5 equal parts
+cross.validation <- matrix(sample(1:50, 50), nrow=5, ncol=10)
+cross.validation
+
+cross.results_init <- apply(cross.validation, 1, function(test.sample){
+  # using each part as testing dataset
+  # using rest of the dataset as training dataset
+  train.sample <- (1:50)[-test.sample]
+  train.data <- top10_dt[train.sample, ]
+  train.response <- top10_dt$Age[train.sample]
+  test.data <- top10_dt[test.sample, ]
+  test.response <- top10_dt$Age[test.sample]
+  
+  # calculating RMSE for every part and default random forest
+  return(wrapper(train.data, train.response, test.data, test.response, 100))
+})
+
+print(cross.results_init)
+
+cross.results <- apply(cross.validation, 1, function(test.sample){
+  # using each part as testing dataset
+  # using rest of the dataset as training dataset
+  train.sample <- (1:50)[-test.sample]
+  train.data <- top10_dt[train.sample, ]
+  train.response <- top10_dt$Age[train.sample]
+  test.data <- top10_dt[test.sample, ]
+  test.response <- top10_dt$Age[test.sample]
+  
+  # calculating RMSE for every part and default random forest
+  return(wrapper(train.data, train.response, test.data, test.response, 100, mtry=2, nodesize=4, replace=T, ntree=250))
+})
+print(cross.results)
+print(rowMeans(cross.results_init))
+print(rowMeans(cross.results))
+```
+
